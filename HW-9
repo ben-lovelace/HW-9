@@ -1,0 +1,177 @@
+---
+title: "Homework 9"
+author: "Ben Lovelace"
+date: "BRL979"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.height=3, fig.width=4, warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=60))
+```
+
+```{r include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(mosaic)
+library(MatchIt)
+library(kableExtra)
+library(broom)
+```
+
+
+## [Github Link](https://github.com/ben-lovelace/SDWS315-HW_4)
+
+------------------------------------------------------------------------
+
+# **Question 1:**
+```{r message=FALSE, warning=FALSE, include=FALSE}
+turnout = read.csv("turnout.csv")
+```
+
+
+### **Part A:**
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+prop_voted98 = prop(~voted1998,data=filter(turnout,GOTV_call==1))
+prop_voted98
+
+prop_novote98 = prop(~voted1998,data=filter(turnout,GOTV_call==0))
+prop_novote98
+
+propvote_boot = do(100)*diffprop(voted1998~GOTV_call, data=resample(turnout))
+
+propvote_confint = confint(propvote_boot,level=.95)
+propvote_confint
+
+```
+The proportion of those who voted in 1998 who received a call was about .65. The proportion of those who voted in 1998 who did not receive a call was about .44. The confidence interval for the difference in these proportions is `r round(propvote_confint$lower,2)` to `r round(propvote_confint$upper,2)`.
+
+### **Part B:**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Proving voted1996 as a confounder
+lm_v96 = lm(voted1998 ~ GOTV_call + voted1996, data = turnout)
+
+xtabs(~ voted1996 + voted1998, data=turnout) %>%
+  prop.table(margin=2)
+```
+The table demonstrates that those who voted in 1996 were more likely to vote in 1998, which is the proportion of voters in 1998, meaning that voted1996 is a confounder.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Proving MAJORPRTY as a confounder
+lm_party = lm(voted1998 ~ GOTV_call + MAJORPTY, data = turnout)
+
+xtabs(~ MAJORPTY + voted1998, data=turnout) %>%
+  prop.table(margin=2)
+```
+Like with voted1996, this table demonstrates that registration with a party led to a higher chance of voting in 1998, meaning that it as also a confounder.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Proving AGE as a confounder
+lm_AGE = lm(voted1998 ~ GOTV_call + AGE, data = turnout)
+
+diffmean(AGE~voted1998,data=turnout)
+mean_votedage = mean(~AGE,data=filter(turnout,voted1998==TRUE))
+mean_novoteage = mean(~AGE,data=filter(turnout,voted1998==FALSE))
+
+boot_meandiffage = do(100)*diffmean(AGE ~ voted1998,data=resample(turnout))
+confint_meandiffage = confint(boot_meandiffage, level = .95)
+```
+The mean age of those who did not vote was around 45 years old, while the mean of those who did vote was 55, with a confidence interval of about `r round(confint_meandiffage$lower,2)` to `r round(confint_meandiffage$upper,2)`. This means that age is also a confounder for voted1998.
+
+### **Part C:**
+```{r message=FALSE, warning=FALSE, include=FALSE}
+turnout_match = matchit(GOTV_call ~ voted1996 + AGE + MAJORPTY, data = turnout, ratio = 5)
+turnout_matched = match.data(turnout_match)
+
+lm_match = lm(voted1998 ~ GOTV_call, data = turnout_matched)
+coef(lm_match)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Prove voted1996 is no longer confounding:
+xtabs(~ voted1996 + GOTV_call, data=turnout_matched) %>%
+  prop.table(margin=2)
+```
+After matching, this table demonstrated nearly identical proportions of those who received a GOTV call, meaning that voted1996 is no longer confounding
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Prove MAJORPTY is no longer confounding:
+xtabs(~ MAJORPTY + GOTV_call, data=turnout_matched) %>%
+  prop.table(margin=2)
+```
+After matching, this table demonstrated nearly identical proportions of those who received a GOTV call, meaning that MAJORPTY is no longer confounding
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Prove AGE is no longer confounding:
+mean(AGE ~ GOTV_call, data=turnout_matched)
+```
+The mean age for those who got a call and those who did not is the almost the same, meaning that AGE is no longer a confounder.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+n = diffprop(voted1998~GOTV_call,data=turnout_matched)
+```
+The difference in proportions for whether or not voters who received a GOTV call or didn't is about `round(n,2)`, meaning that the GOTV calls likely had a small effect on voters. 
+
+------------------------------------------------------------------------
+
+# **Question 2:**
+```{r message=FALSE, warning=FALSE, include=FALSE}
+solder = read.csv("solder.csv")
+```
+
+### **Part A:**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(solder,aes(x=Opening,y=skips)) + 
+  geom_boxplot(color='orchid4',fill='orchid2') + xlab("Size of Opening") + ylab("Skips") + ggtitle("Skips by Size of Opening") + theme_minimal()
+```
+
+This plot demonstrates that as the opening hole gets larger, the number of skips rises as well
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(solder,aes(x=Solder,y=skips)) + 
+  geom_boxplot(color='skyblue4',fill='skyblue2') + xlab("Size of Opening") + ylab("Skips") + ggtitle("Skips by Thickness of Solder") + theme_minimal()
+```
+
+This plot demonstrates that thick solders lead to less skipping than thin solders.
+
+### **Part B:**
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+lm_skips = lm(skips~Solder + Opening + Solder:Opening,data=solder)
+
+boot_lmskips = do(100)*lm(skips~Solder + Opening + Solder:Opening,data=resample(solder))
+
+
+skips_coefs = tidy(lm_skips)
+skips_coefs[1,1] = 'Intercept'
+skips_coefs[5,1] = 'SolderThin.OpeningM'
+skips_coefs[6,1] = 'SolderThin.OpeningS'
+
+skips_confint = confint(boot_lmskips,level=.95)
+colnames(skips_coefs) = c("name","estimate","std error","statistic","p.value")
+skips_table = merge(skips_coefs,skips_confint,by='name')
+
+skips_table = select(skips_table,name,estimate.x,lower,upper)
+colnames(skips_table) = c("Name","Coefficient","Lower","Upper")
+skips_table = kable(skips_table)
+skips_table
+```
+
+### **Part C:**
+The baseline is around .39. This is the intercept for the number of skips when the solder is thick and the opening is large.
+
+The next coefficient is SolderThin, which is 2.28. This demonstrates that on average, a thin solder means about 2.28 more skips than a thick solder with a large opening
+
+The next coefficient is OpeningM, which is 2.41. This demonstrates that on average a medium opening leads to about 2.41 more skips than the baseline
+
+The next coefficient is OpeningS, which is 5.13. This demonstrates that on average a small opening leads to about 5.13 more skips than the baseline
+
+The next coefficient is SolderThin:OpeningM, which is -.74. This represents the effect of the interaction of a thin solder and a medium opening and demosntrates that on average a medium opening and thin solder leads to about .74 LESS skips than the baseline
+
+The next coefficient is SolderThin:OpeningS, which is 9.65 This represents the effect of the interaction of a thin solder and a small opening and demosntrates that on average a small opening and thin solder leads to about 9.65 more skips than the baseline
+
+### **Part D:**
+If I were to recommend an opening size and solder thickness combination to AT&T in order to minimize the number of skips I would recommend a medium opening with a thin solder size, as it was the only coefficient that was negative, meaning that it actually led to less skips than the baseline.
